@@ -299,8 +299,11 @@ python evaluating_tools/eval_recognition.py --predictions results/dior_mini/open
 
 ## Citation
 ```text
-title={InstructSAM: A Training-Free Framework for Instruction-Oriented Remote Sensing Object Recognition}, 
+@inproceedings{
+zheng2025instructsam,
+title={Instruct{SAM}: A Training-free Framework for Instruction-Oriented Remote Sensing Object Recognition},
 author={Yijie Zheng and Weijie Wu and Qingyun Li and Xuehui Wang and Xu Zhou and Aiai Ren and Jun Shen and Long Zhao and Guoqing Li and Xue Yang},
-year={2025},
-journal={arXiv preprint arXiv:2505.15818},
+booktitle={The Thirty-ninth Annual Conference on Neural Information Processing Systems},
+year={2025}
+}
 ```
