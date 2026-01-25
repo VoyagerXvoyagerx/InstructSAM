@@ -8,6 +8,7 @@ import json
 import copy
 from collections import defaultdict
 import os
+from tqdm import tqdm
 
 
 def convert_predictions_to_coco(img_name_list, boxes_final_list, labels_final_list, segmentations_final_list,
@@ -585,7 +586,7 @@ def evaluate_mIoU(ann, coco_predictions, save_path=None):
     pred_area = {cat_id: 0 for cat_id in cat_ids}
 
     # Process each image
-    for img_id in img_ids:
+    for img_id in tqdm(img_ids):
         img_info = coco_gt.loadImgs(img_id)[0]
         height, width = img_info['height'], img_info['width']
 
@@ -693,6 +694,135 @@ def evaluate_mIoU(ann, coco_predictions, save_path=None):
         print(f"Results saved to {save_path}")
 
 
+def evaluate_mIoU_ignore_unlabeled(ann, coco_predictions, unlabeled_category='no label', save_path=None):
+    """
+    计算在忽略未标注区域（如“no label”）情况下的每类 IoU 和 mIoU。
+
+    Args:
+        ann (dict): COCO 格式的 GT 标注（包含 segmentation）
+        coco_predictions (list): COCO 格式的预测结果（包含 segmentation）
+        unlabeled_category (str): 表示未标注区域的类别名称
+        save_path (str): 若提供则将结果保存到该路径
+    """
+    coco_gt = COCO()
+    coco_gt.dataset = ann
+    coco_gt.createIndex()
+
+    coco_dt = coco_gt.loadRes(coco_predictions)
+
+    categories = {cat['id']: cat['name'] for cat in ann['categories']}
+    cat_ids = [cat_id for cat_id, name in categories.items()
+               if name != unlabeled_category]
+    img_ids = coco_gt.getImgIds()
+
+    intersection = {cat_id: 0 for cat_id in cat_ids}
+    union = {cat_id: 0 for cat_id in cat_ids}
+    gt_area = {cat_id: 0 for cat_id in cat_ids}
+    pred_area = {cat_id: 0 for cat_id in cat_ids}
+
+    def decode_to_bool(segmentation, height, width):
+        if isinstance(segmentation, dict):
+            rle = segmentation
+        else:
+            poly_rles = cocomask.frPyObjects(segmentation, height, width)
+            if isinstance(poly_rles, list):
+                rle = cocomask.merge(poly_rles, intersect=False)
+            else:
+                rle = poly_rles
+        return cocomask.decode(rle).astype(bool)
+
+    for img_id in tqdm(img_ids):
+        img_info = coco_gt.loadImgs(img_id)[0]
+        height, width = img_info['height'], img_info['width']
+
+        ann_ids = coco_gt.getAnnIds(imgIds=img_id)
+        anns = coco_gt.loadAnns(ann_ids)
+
+        pred_ids = coco_dt.getAnnIds(imgIds=img_id)
+        preds = coco_dt.loadAnns(pred_ids)
+
+        gt_masks = {cat_id: [] for cat_id in cat_ids}
+        pred_masks = {cat_id: [] for cat_id in cat_ids}
+
+        labeled_mask = np.zeros((height, width), dtype=bool)
+
+        for ann_item in anns:
+            cat_id = ann_item['category_id']
+            if categories.get(cat_id) == unlabeled_category or 'segmentation' not in ann_item:
+                continue
+            mask_bool = decode_to_bool(ann_item['segmentation'], height, width)
+            labeled_mask |= mask_bool
+            if cat_id in gt_masks:
+                gt_masks[cat_id].append(mask_bool)
+
+        if not labeled_mask.any():
+            continue  # 整张图都没有标注，跳过
+
+        for pred in preds:
+            cat_id = pred['category_id']
+            if cat_id not in pred_masks or 'segmentation' not in pred:
+                continue
+            mask_bool = decode_to_bool(pred['segmentation'], height, width)
+            mask_bool &= labeled_mask
+            if mask_bool.any():
+                pred_masks[cat_id].append(mask_bool)
+
+        for cat_id in cat_ids:
+            gt_mask_list = gt_masks[cat_id]
+            pred_mask_list = pred_masks[cat_id]
+
+            if gt_mask_list:
+                gt_union_mask = np.logical_or.reduce(gt_mask_list)
+            else:
+                gt_union_mask = np.zeros((height, width), dtype=bool)
+
+            if pred_mask_list:
+                pred_union_mask = np.logical_or.reduce(pred_mask_list)
+            else:
+                pred_union_mask = np.zeros((height, width), dtype=bool)
+
+            gt_union_mask &= labeled_mask
+            pred_union_mask &= labeled_mask
+
+            inter = np.logical_and(gt_union_mask, pred_union_mask).sum()
+            gt_area_cat = gt_union_mask.sum()
+            pred_area_cat = pred_union_mask.sum()
+            union_cat = np.logical_or(gt_union_mask, pred_union_mask).sum()
+
+            intersection[cat_id] += inter
+            union[cat_id] += union_cat
+            gt_area[cat_id] += gt_area_cat
+            pred_area[cat_id] += pred_area_cat
+
+    class_iou = {}
+    for cat_id in cat_ids:
+        if union[cat_id] > 0:
+            iou = intersection[cat_id] / union[cat_id]
+        else:
+            iou = 0.0 if gt_area[cat_id] > 0 or pred_area[cat_id] > 0 else float('nan')
+        class_iou[categories[cat_id]] = iou
+
+    valid_ious = [iou for iou in class_iou.values() if not np.isnan(iou)]
+    miou = np.mean(valid_ious) if valid_ious else 0.0
+
+    table_data = []
+    for cat_name, iou in class_iou.items():
+        iou_str = f"{iou:.3f}" if not np.isnan(iou) else "N/A"
+        table_data.append([cat_name, iou_str])
+
+    headers = ['Category', 'IoU']
+    table_str = tabulate(table_data, headers=headers, tablefmt='grid')
+    summary_str = f"mIoU (ignore unlabeled): {miou:.3f}"
+    full_output = f"{table_str}\n\n{summary_str}"
+
+    print(full_output)
+    if save_path is not None:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        with open(save_path, 'w') as f:
+            f.write(full_output)
+        print(f"Results saved to {save_path}")
+        
+        
 def calculate_num_rp(rp_dict, threshold=0.01):
     cnt = 0
     for _, value in rp_dict.items():

@@ -32,15 +32,16 @@ def parse_args():
     parser.add_argument('--eval_mIoU', type=bool, default=False)
     parser.add_argument('--score_sweeping', action='store_true', default=False,
                         help='Perform score sweeping to find the best threshold for conventional detectors.')
-    parser.add_argument('--device', type=str, default='cuda:0')
+    parser.add_argument('--device', type=str, default='cuda:3')
     args = parser.parse_args()
 
     return args
 
 
-def score_sweeping(coco_predictions, anns_coco):
+def score_sweeping(coco_predictions, anns_coco, unseen=None):
     # Thresholds to evaluate
-    thresholds = [round(x, 2) for x in list(np.arange(0, 1, 0.02))]
+    thresholds = [round(x, 4) for x in list(np.arange(0.18, 0.28, 0.002))]
+    # thresholds = [round(x, 2) for x in list(np.arange(0, 1, 0.02))]
     mf1_values = []
     # Evaluate mAP50 for each threshold
     coco_predictions_copy = copy.deepcopy(coco_predictions)
@@ -48,10 +49,11 @@ def score_sweeping(coco_predictions, anns_coco):
         coco_predictions_filtered = [
             pred for pred in coco_predictions_copy if pred['score'] >= threshold]
         print(len(coco_predictions_filtered))
-        _, mean_f1_score, _ = calculate_f1_scores(
-            anns_coco, coco_predictions_filtered)
-        mf1_values.append(mean_f1_score)
-        print(f'threshold: {threshold}, mF1: {mean_f1_score}')
+        _, mean_f1_score, mean_f1_unseen = calculate_f1_scores(
+            anns_coco, coco_predictions_filtered, unseen=unseen)
+        f1 = mean_f1_score if args.setting != 'open_subclass' else mean_f1_unseen
+        mf1_values.append(f1)
+        print(f'threshold: {threshold}, mF1: {f1}')
 
     # calculate the best threshold
     best_threshold = thresholds[np.argmax(mf1_values)]
@@ -103,7 +105,7 @@ if __name__ == '__main__':
         all_counts = get_all_counts(coco_preds_raw)
         pred2cat = get_cat_map(
             model, tokenizer, predictor.categories, all_counts, threshold=0.95)
-
+        print(pred2cat)
         print(f"Total unique classes: {len(all_counts)}")
         print(f"Examples of counts: {list(all_counts.items())[:5]}")
 
@@ -116,7 +118,7 @@ if __name__ == '__main__':
         coco_predictions = coco_preds_raw
 
     if args.score_sweeping:
-        best_threshold = score_sweeping(coco_predictions, anns_coco)
+        best_threshold = score_sweeping(coco_predictions, anns_coco, extra_classes)
         coco_predictions = [
             pred for pred in coco_predictions if pred['score'] >= best_threshold]
 

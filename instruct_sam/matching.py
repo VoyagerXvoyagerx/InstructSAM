@@ -9,6 +9,9 @@ import pulp
 import open_clip
 import time
 import os
+import cv2
+from pycocotools import mask as mask_util
+from PIL import Image
 
 
 def get_preprocess_rs5m(image_resolution=224):
@@ -39,8 +42,9 @@ def init_clip_model(clip_model, device='cuda:0', ckpt_path=None):
         raise ValueError(f"ckpt_path is None for {clip_model}")
     # check if ckpt_path exists
     if not os.path.exists(ckpt_path):
-        raise FileNotFoundError(f"Checkpoint file not found at {os.path.abspath(ckpt_path)}")
-    
+        raise FileNotFoundError(
+            f"Checkpoint file not found at {os.path.abspath(ckpt_path)}")
+
     if clip_model == 'dfn2b':
         # ViT-L/14 (DFN)
         model_name = 'ViT-L-14'  # ('ViT-L-14', 'dfn2b_s39b'),
@@ -199,7 +203,7 @@ def assign_labels_with_constraints(similarity_scores, gpt_predicted_counts):
                                ) == gpt_predicted_counts[label]
 
     # Step 5: Solve the ILP
-    prob.solve(pulp.PULP_CBC_CMD(msg=False))
+    prob.solve(pulp.PULP_CBC_CMD(msg=False, timeLimit=3))
     # prob.solve(pulp.PULP_CBC_CMD())
 
     # Step 6: Extract the results
@@ -218,10 +222,100 @@ def assign_labels_with_constraints(similarity_scores, gpt_predicted_counts):
     return assignments
 
 
+def assign_labels_landcover(similarity_scores, gpt_predicted_counts, areas, lambda_area=1.0):
+    """
+    Assign region proposals to land cover classes with soft area constraints.
+
+    Args:
+        similarity_scores (np.ndarray): [N, M], similarity between regions and labels.
+        gpt_predicted_counts (dict): {class_name: percent, ...}
+        areas (list or np.ndarray): [N], area (pixel count) of each region proposal.
+        lambda_area (float): weight for area penalty.
+
+    Returns:
+        assignments: list of (region_index, label_index)
+    """
+    import pulp
+    import numpy as np
+
+    num_regions, num_labels = similarity_scores.shape
+    cost_matrix = (1 - similarity_scores).cpu().numpy()  # [N, M] - convert to CPU numpy
+    total_pixels = int(np.sum(areas))
+
+    # label mapping
+    label_names = list(gpt_predicted_counts.keys())
+    label_percents = [gpt_predicted_counts[k] for k in label_names]
+    label_targets = [int(round(p * total_pixels / 100)) for p in label_percents]
+
+    # ILP
+    prob = pulp.LpProblem("LandCoverAssignmentSoft", pulp.LpMinimize)
+    X = pulp.LpVariable.dicts(
+        "X",
+        ((i, j) for i in range(num_regions) for j in range(num_labels)),
+        cat="Binary"
+    )
+    # For absolute value penalty, introduce auxiliary variables for each class
+    E = pulp.LpVariable.dicts("E", (j for j in range(num_labels)), lowBound=0, cat="Continuous")
+
+    # --- Normalization factors ---
+    # 1. average assignment cost
+    cost_sum = pulp.lpSum(cost_matrix[i, j] * X[i, j] for i in range(num_regions) for j in range(num_labels))
+    norm_cost = cost_sum / num_regions
+    # 2. area error: average absolute error ratio
+    area_error_sum = pulp.lpSum(E[j] for j in range(num_labels))
+    norm_area_error = area_error_sum / total_pixels
+
+    # Objective: normalized average assignment cost + lambda * normalized area error
+    prob += norm_cost + lambda_area * norm_area_error
+
+    # 每个region只能分配一个标签
+    for i in range(num_regions):
+        prob += pulp.lpSum(X[i, j] for j in range(num_labels)) == 1
+
+    # 面积软约束（绝对值线性化）
+    for j in range(num_labels):
+        assigned_area = pulp.lpSum(areas[i] * X[i, j] for i in range(num_regions))
+        prob += assigned_area - label_targets[j] <= E[j]
+        prob += label_targets[j] - assigned_area <= E[j]
+
+    # 求解
+    prob.solve(pulp.PULP_CBC_CMD(msg=False, timeLimit=3))
+
+    # Print solution status and objective parts
+    status = pulp.LpStatus[prob.status]
+    print(f"ILP solution status: {status}")
+    # Compute the two parts of the objective for the returned assignment
+    # if status in ["Optimal", "Feasible"]:
+    # Get assignment matrix
+    X_sol = np.zeros((num_regions, num_labels))
+    for i in range(num_regions):
+        for j in range(num_labels):
+            if pulp.value(X[i, j]) > 0.5:
+                X_sol[i, j] = 1
+    avg_cost = np.sum(cost_matrix * X_sol) / num_regions
+    # Compute area error
+    area_errors = []
+    for j in range(num_labels):
+        assigned_area = np.sum([areas[i] for i in range(num_regions) if X_sol[i, j] > 0.5])
+        area_errors.append(abs(assigned_area - label_targets[j]))
+    avg_area_error = lambda_area * np.sum(area_errors) / total_pixels
+    print(f"  - Average assignment cost: {avg_cost:.4f}")
+    print(f"  - Normalized area error: {avg_area_error:.4f}")
+
+    assignments = [
+        (i, j)
+        for i in range(num_regions)
+        for j in range(num_labels)
+        if pulp.value(X[i, j]) > 0.5
+    ]
+    return assignments
+
+
 def match_boxes_and_counts(image, boxes, object_cnt, text_features,
-                           model, preprocess, segmentations=None,
+                           model, preprocess, segmentations=None, areas=None,
                            crop_scale=1.2, batch_size=200, min_crop_width=0,
-                           show_similarities=False, zero_count_warning=True):
+                           show_similarities=False, zero_count_warning=True,
+                           landcover=False, lambda_area=1.0, crop_mask=False):
     """
     Assigns region proposals (bounding boxes) to categories based on similarity scores and object count constraints.
 
@@ -271,7 +365,7 @@ def match_boxes_and_counts(image, boxes, object_cnt, text_features,
     # Get the width and height of the image
     image_width, image_height = image.size
 
-    for box in boxes:
+    for box_idx, box in enumerate(boxes):
         x, y, w, h = box
 
         if x > image_width or y > image_height:
@@ -299,8 +393,57 @@ def match_boxes_and_counts(image, boxes, object_cnt, text_features,
         new_y1 = max(0, new_y1)  # Top boundary
         new_x2 = min(image_width, new_x2)  # Right boundary
         new_y2 = min(image_height, new_y2)  # Bottom boundary
+        if not crop_mask:
+            region = image.crop((new_x1, new_y1, new_x2, new_y2))
+        else:
+            # Use integer coordinates for cropping
+            new_x1_int, new_y1_int = int(np.floor(new_x1)), int(np.floor(new_y1))
+            new_x2_int, new_y2_int = int(np.ceil(new_x2)), int(np.ceil(new_y2))
 
-        region = image.crop((new_x1, new_y1, new_x2, new_y2))
+            region = image.crop((new_x1_int, new_y1_int, new_x2_int, new_y2_int))
+
+            # Apply scaled mask to the region if segmentation is available
+            if segmentations is not None and box_idx < len(segmentations) and segmentations[box_idx] is not None:
+                seg = segmentations[box_idx]
+                if isinstance(seg, dict):  # RLE
+                    full_mask = mask_util.decode(seg)
+                else:  # Polygon(s)
+                    rles = mask_util.frPyObjects(seg, image_height, image_width)
+                    rle = mask_util.merge(rles, intersect=False) if isinstance(rles, list) else rles
+                    full_mask = mask_util.decode(rle)
+                if full_mask is not None:
+                    mask_uint8 = full_mask.astype(np.uint8)
+
+                    # Dilate mask according to crop scale
+                    margin_x = max(0, int(round((new_w - w) / 2)))
+                    margin_y = max(0, int(round((new_h - h) / 2)))
+                    if margin_x > 0 or margin_y > 0:
+                        kernel = cv2.getStructuringElement(
+                            cv2.MORPH_ELLIPSE,
+                            (2 * margin_x + 1, 2 * margin_y + 1)
+                        )
+                        # print(f'Dilating mask with kernel size: {(2 * margin_x + 1, 2 * margin_y + 1)}, kernal = {kernel}')
+                        mask_uint8 = cv2.dilate(mask_uint8, kernel)
+
+                    # Crop mask to the same region as the image crop
+                    mask_crop = mask_uint8[new_y1_int:new_y2_int, new_x1_int:new_x2_int]
+
+                    # Ensure mask size matches the cropped region
+                    region_np = np.array(region)
+                    if mask_crop.shape[:2] != region_np.shape[:2]:
+                        mask_crop = cv2.resize(
+                            mask_crop,
+                            (region_np.shape[1], region_np.shape[0]),
+                            interpolation=cv2.INTER_NEAREST
+                        )
+                    # Apply mask (zero out background)
+                    region_np[mask_crop == 0] = 0
+                    region = Image.fromarray(region_np)  
+
+        if isinstance(region, torch.Tensor):
+            if region.shape[-2] == 0 or region.shape[-1] == 0:
+                print(f"Skipping invalid region with shape: {region.shape}")
+                continue
         if isinstance(model, open_clip.model.CLIP):
             regions.append(preprocess(region).unsqueeze(0))
         else:
@@ -355,12 +498,16 @@ def match_boxes_and_counts(image, boxes, object_cnt, text_features,
         visualize_prediction(np.array(image), boxes, similarity_labels,
                              scores=similarity_scores_max, dpi=100, title='Similarity Scores')
 
-    # start_time = time.time()
+    start_time = time.time()
     # Step 4: Extract final boxes and labels based on assignments
-    assignments = assign_labels_with_constraints(
-        similarity_scores, gpt_predicted_counts)
-    # end_time = time.time()
-    # print(f"Time taken for assignment: {end_time - start_time} seconds")
+    if landcover:
+        assignments = assign_labels_landcover(
+            similarity_scores, gpt_predicted_counts, areas=areas, lambda_area=lambda_area)
+    else:
+        assignments = assign_labels_with_constraints(
+            similarity_scores, gpt_predicted_counts)
+    end_time = time.time()
+    print(f"Time taken for assignment: {end_time - start_time} seconds")
     if not assignments:
         print("Warning: No assignments found. Returning empty results.")
         return [], [], [], []  # Return empty results

@@ -5,6 +5,21 @@ import numpy as np
 import matplotlib.patches as patches
 
 
+TLM_COLOR_DICT = {'no labels': (0.0, 0.0, 0.0),
+                  'agricultural areas': (0.0, 0.7843137254901961, 0.3254901960784314),
+                  'vineyards': (0.36470588235294116, 0.09411764705882353, 0.5333333333333333),
+                  'rocks': (0.3764705882352941, 0.49019607843137253, 0.5450980392156862),
+                  'roads': (0.7411764705882353, 0.7411764705882353, 0.7411764705882353),
+                  'buildings': (0.8980392156862745, 0.2235294117647059, 0.20784313725490197),
+                  'bush forest': (0.5803921568627451, 0.8784313725490196, 0.23921568627450981),
+                  'forest': (0.10588235294117647, 0.3686274509803922, 0.12549019607843137),
+                  'open forest': (0.4980392156862745, 0.42745098039215684, 0.0),
+                  'river': (0.09411764705882353, 1.0, 1.0),
+                  'lake': (0.0, 0.7372549019607844, 0.8313725490196079),
+                  'wetlands': (0.14901960784313725, 0.5450980392156862, 0.5058823529411764),
+                  'railways': (0.3803921568627451, 0.3803921568627451, 0.3803921568627451),
+                  'rocks with grass': (1.0, 0.8784313725490196, 0.5098039215686274)}
+
 def extract_results_from_coco(coco_preds, coco_ann, img_name, score_threshold=0):
     """
     Extract detection results for a specific image from standard COCO format predictions.
@@ -98,7 +113,7 @@ def extract_results_from_coco(coco_preds, coco_ann, img_name, score_threshold=0)
 
 def visualize_prediction(image, bboxes=None, labels=None, segmentations=None, scores=None, color_dict=None,
                          dpi=100, show_gt=False, ann_data=None, img_path=None, alpha_mask=0.3, title='Predictions',
-                         save_path=None):
+                         save_path=None, draw_bbox=True):
     """
     Visualize object detection predictions and optional Ground Truth.
 
@@ -161,11 +176,15 @@ def visualize_prediction(image, bboxes=None, labels=None, segmentations=None, sc
                     color_map[label] = np.random.rand(3)
                 color = color_map[label]
             # print("color", color)
-            # Draw bounding box
             x, y, w, h = bboxes[i]
-            rect = patches.Rectangle(
-                (x, y), w, h, linewidth=1, edgecolor=color, facecolor='none')
-            ax1.add_patch(rect)
+            
+            if draw_bbox:
+            # Draw bounding box
+                rect = patches.Rectangle(
+                    (x, y), w, h, linewidth=1, edgecolor=color, facecolor='none')
+                ax1.add_patch(rect)
+            else:
+                x, y = x + w / 2, y + h / 2  # Center point for label
 
             # Display label and score
             if scores is not None:

@@ -14,7 +14,7 @@ import copy
 
 class InstructSAM:
     def __init__(self, annotations=None, img_dir=None, count_dir=None, rp_preds=None, device="cuda:0"):
-
+        print("init from InstructSAM released")
         self.img_dir = img_dir
         self.count_dir = count_dir
         self.rp_preds = rp_preds
@@ -61,8 +61,9 @@ class InstructSAM:
             pred = self.rp_preds[self.img_name]
             boxes, labels, scores = pred["bboxes"], pred["labels"], pred["scores"],
             segmentations = pred["segmentations"] if "segmentations" in pred else None
-            boxes, scores, labels, segmentations = filter_boxes(
-                boxes, segmentations, scores, labels, thr)
+            areas = pred["areas"] if "areas" in pred else None
+            # boxes, scores, labels, segmentations = filter_boxes(
+            #     boxes, segmentations, scores, labels, thr)
             try:
                 labels = [self.categories[int(label)] for label in labels]
             except:
@@ -71,6 +72,7 @@ class InstructSAM:
             self.segmentations = segmentations
             self.labels = labels
             self.scores = scores
+            self.areas = areas
 
     def count_objects(self, prompt, gpt_model="gpt-4o-2024-11-20", json_output=False):
         base64_image = encode_image_as_base64(self.img_path)
@@ -269,18 +271,15 @@ class InstructSAM:
 
         return prompts
 
-    def calculate_vocab_text_features(self, clip_model, tokenizer):
+    def calculate_vocab_text_features(self, clip_model, tokenizer, prefix='a satellite image of', single=True):
         """calculate text feature cache of dataset categories
 
         Args:
             clip_model (torch.nn.Module): OpenCLIP model
             tokenizer (callable): OpenCLIP tokenizer
         """
-        enhanced_prompt = (
-            self.enhance_clip_prompt(self.categories)
-            if isinstance(clip_model, open_clip.model.CLIP)
-            else self.enhance_clip_prompt(self.categories, prefix='a satellite image of')
-        )
+        enhanced_prompt = self.enhance_clip_prompt(self.categories, prefix=prefix, single=single)
+        print(f'Example prompt: {enhanced_prompt[0]}')
         TARGET_CATEGORY_tokens = tokenizer(enhanced_prompt).to(
             next(clip_model.parameters()).device)
         with torch.no_grad():
@@ -293,7 +292,7 @@ class InstructSAM:
             TARGET_FEATURES /= TARGET_FEATURES.norm(dim=-1, keepdim=True)
         self.vocab_features = TARGET_FEATURES
 
-    def calculate_pred_text_features(self, clip_model, tokenizer, use_vocab=False):
+    def calculate_pred_text_features(self, clip_model, tokenizer, use_vocab=False, prefix='a satellite image of', single=True):
         """calculate text features of predicted categories
 
         Args:
@@ -336,11 +335,7 @@ class InstructSAM:
             if not gpt_predicted_classes:
                 self.pred_text_features = None
                 return None
-            cat_prompt = (
-                self.enhance_clip_prompt(gpt_predicted_classes)
-                if isinstance(clip_model, open_clip.model.CLIP)
-                else self.enhance_clip_prompt(gpt_predicted_classes, prefix='a satellite image of')
-            )
+            cat_prompt = self.enhance_clip_prompt(gpt_predicted_classes, prefix=prefix, single=single)
             text_tokens = tokenizer(cat_prompt).to(
                 next(clip_model.parameters()).device)
             with torch.no_grad():
@@ -355,7 +350,8 @@ class InstructSAM:
     def match_boxes_and_labels(self,
                                clip_model, preprocess,
                                crop_scale=1.2, batch_size=200, min_crop_width=0,
-                               show_similarities=False, zero_count_warning=True):
+                               show_similarities=False, zero_count_warning=True,
+                               landcover=False, lambda_area=1.0, crop_mask=False):
         """
         Match predicted boxes with predicted counts
 
@@ -371,9 +367,10 @@ class InstructSAM:
         """
         boxes_final, labels_final, segmentations_final, scores_final = match_boxes_and_counts(
             self.img_jpeg, self.bboxes, self.pred_counts, self.pred_text_features,
-            clip_model, preprocess, self.segmentations,
+            clip_model, preprocess, self.segmentations, self.areas,
             crop_scale=crop_scale, batch_size=batch_size, min_crop_width=min_crop_width,
-            show_similarities=show_similarities, zero_count_warning=zero_count_warning)
+            show_similarities=show_similarities, zero_count_warning=zero_count_warning,
+            landcover=landcover, lambda_area=lambda_area, crop_mask=crop_mask)
 
         self.boxes_final = boxes_final
         self.labels_final = labels_final

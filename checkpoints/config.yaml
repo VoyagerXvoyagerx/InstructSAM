@@ -1,7 +1,7 @@
 dfn2b: "./checkpoints/dfn2b/open_clip_pytorch_model.bin"
 remoteclip: "./checkpoints/remoteclip/RemoteCLIP-ViT-L-14.pt"
 remoteclip-b32: "./checkpoints/remoteclip/RemoteCLIP-ViT-B-32.pt"
-georsclip: "./checkpoints/georsclip/RS5M_ViT-L-14.pt"
+georsclip: "/home/zkcs/checkpoints/open-clip/georsclip/RS5M_ViT-L-14.pt"
 georsclip-b32: "./checkpoints/georsclip/RS5M_ViT-B-32.pt"
 skyclip: "./checkpoints/SkyCLIP/SkyCLIP_ViT_L14_top30pct_filtered_by_CLIP_laion_RS_epoch_20.pt"
 skyclip-b32: "./checkpoints/SkyCLIP/SkyCLIP_ViT_B32.pt"

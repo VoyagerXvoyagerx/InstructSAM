@@ -1,5 +1,5 @@
-# 最新论文 | InstructSAM，无需训练！根据指令分割一切目标，代码开源
-![作者信息](./assets/paper_info.png)
+# NeurIPS 2025 | InstructSAM，无需训练的指令导向遥感目标识别框架PPT解读
+![作者信息](./slides/slide1.PNG)
 
 题目：InstructSAM: A Training-Free Framework for Instruction-Oriented Remote Sensing Object Recognition
 
@@ -11,9 +11,22 @@
 
 单位：空天院，哈工大，上海交通大学，卧龙岗大学
 
-注：本篇由论文原作者审阅
 
-## 核心贡献
+## 任务描述
+![](./slides/slide2.PNG)
+![](./slides/slide3.PNG)
+![](./slides/slide4.PNG)
+![](./slides/slide5.PNG)
+![](./slides/slide6.PNG)
+![](./slides/slide7.PNG)
+![](./slides/slide8.PNG)
+![](./slides/slide9.PNG)
+![](./slides/slide10.PNG)
+![](./slides/slide11.PNG)
+![](./slides/slide12.PNG)
+![](./slides/slide13.PNG)
+
+
 
 基于自然语言指令的目标识别已成为计算机视觉领域的一种强大范式。然而，语义多样性训练数据的缺乏限制了视觉语言模型在遥感领域的零样本泛化能力。
 
