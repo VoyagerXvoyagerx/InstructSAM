@@ -79,7 +79,7 @@ huggingface-cli download Qwen/Qwen2.5-VL-7B-Instruct \
 - Mask Proposer
   - [sam2_hiera_large.pt](https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt)
 
-- CLIP Model
+- CLIP Models
   - [DFN2B-CLIP-ViT-L-14-39B](https://huggingface.co/apple/DFN2B-CLIP-ViT-L-14-39B/resolve/main/open_clip_pytorch_model.bin?download=true)
   - [GeoRSCLIP-ViT-L-14](https://huggingface.co/Zilun/GeoRSCLIP/resolve/main/ckpt/RS5M_ViT-L-14.pt?download=true)
   - [GeoRSCLIP-ViT-B-32](https://huggingface.co/Zilun/GeoRSCLIP/resolve/main/ckpt/RS5M_ViT-B-32.pt?download=true)
@@ -87,6 +87,8 @@ huggingface-cli download Qwen/Qwen2.5-VL-7B-Instruct \
   - [SkyCLIP-ViT-B-32](https://opendatasharing.s3.us-west-2.amazonaws.com/SkyScript/ckpt/SkyCLIP_ViT_B32_top50pct.zip)
   - [RemoteCLIP-ViT-L-14](https://huggingface.co/chendelong/RemoteCLIP/resolve/main/RemoteCLIP-ViT-L-14.pt?download=true)
   - [RemoteCLIP-ViT-B-32](https://huggingface.co/chendelong/RemoteCLIP/resolve/main/RemoteCLIP-ViT-B-32.pt?download=true)
+
+*Note: You may use [https://huggingface.co/collections/BiliSakura/rsclip-collections](https://huggingface.co/collections/BiliSakura/rsclip-collections) to explore more RS-CLIP variants.
 
 ### Dataset Preparation
 We provide a subset of DIOR with 4 images for quickly going through the entire pipeline. The detailed benchmark category split is stored in the [dataset config](datasets/config.json).
