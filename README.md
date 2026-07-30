@@ -21,14 +21,27 @@
     <sup>4</sup>Shanghai Jiao Tong University&emsp;
     <sup>5</sup>University of Wollongong&emsp;
 </div>
-
-<div>
-    <h4 align="center">
-        • <a href="http://VoyagerXvoyagerx.github.io/InstructSAM" target='_blank'>[Project]</a>
-        • <a href="https://arxiv.org/pdf/2505.15818" target='_blank'>[arXiv]</a>
-        • <a href="https://colab.research.google.com/drive/1Ya7h04ZRPuHv3b934VoGJRMI0QpkH2oo?usp=sharing" target='_blank'>[Colab]</a> •
-    </h4>
-</div>
+<br>
+<p align="center">
+  <a href="https://modelscope.cn/notebook/share/github/VoyagerXvoyagerx/InstructSAM/blob/main/demo/inference_demo.ipynb">
+    <img src="https://img.shields.io/badge/%20-Open%20in%20ModelScope%20Notebook-624aff?logo=modelscope&labelColor=555"/>
+  </a>
+  <a href="https://colab.research.google.com/drive/1Ya7h04ZRPuHv3b934VoGJRMI0QpkH2oo?usp=sharing">
+    <img src="https://colab.research.google.com/assets/colab-badge.svg"/>
+  </a>
+  <a href="http://voyagerxvoyagerx.github.io/InstructSAM">
+    <img src="https://img.shields.io/badge/Project-Page-2ea44f?logo=googlechrome"/>
+  </a>
+  <a href="https://github.com/VoyagerXvoyagerx/InstructSAM">
+    <img src="https://img.shields.io/badge/GitHub-Code-181717?logo=github"/>
+  </a>
+  <a href="https://arxiv.org/abs/2505.15818">
+    <img src="https://img.shields.io/badge/arXiv-2505.15818-b31b1b?logo=arxiv"/>
+  </a>
+  <a href="https://openreview.net/forum?id=7yRwAEWxto">
+    <img src="https://img.shields.io/badge/OpenReview-Paper-4b8bbe"/>
+  </a>
+</p>
 
 ## Introduction
 InstructSAM is a training-free framework for Instruction-Oriented Object Counting, Detection, and Segmentation (InstructCDS). We construct EarthInstruct, an InstructCDS benchmark for remote sensing. The three instruction settings in EarthInstruct includes:
